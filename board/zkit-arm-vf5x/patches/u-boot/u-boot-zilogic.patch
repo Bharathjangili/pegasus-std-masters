@@ -1,0 +1,190 @@
+diff --git a/board/toradex/colibri_vf/colibri_vf.c b/board/toradex/colibri_vf/colibri_vf.c
+index 535d1a1..17e4894 100644
+--- a/board/toradex/colibri_vf/colibri_vf.c
++++ b/board/toradex/colibri_vf/colibri_vf.c
+@@ -650,4 +650,19 @@ int board_usb_phy_mode(int port)
+ 		return USB_INIT_HOST;
+ 	}
+ }
++
++int board_eth_init(bd_t *bis)
++{
++	int rc = -ENODEV;
++
++#if defined(CONFIG_FEC_MXC)
++	rc = fecmxc_initialize(bis);
++#endif
++
++#if defined(CONFIG_USB_ETHER)
++	rc = usb_eth_initialize(bis);
++#endif
++	return rc;
++}
++
+ #endif
+diff --git a/configs/colibri_vf_defconfig b/configs/colibri_vf_defconfig
+index cf2d87a..225c294 100644
+--- a/configs/colibri_vf_defconfig
++++ b/configs/colibri_vf_defconfig
+@@ -4,11 +4,11 @@ CONFIG_DM_SERIAL=y
+ CONFIG_DEFAULT_DEVICE_TREE="vf610-colibri"
+ CONFIG_FIT=y
+ CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/toradex/colibri_vf/imximage.cfg,ENV_IS_IN_NAND,IMX_NAND"
+-CONFIG_BOOTDELAY=1
+-CONFIG_VERSION_VARIABLE=y
++CONFIG_BOOTDELAY=3
++# CONFIG_VERSION_VARIABLE is not set
+ # CONFIG_DISPLAY_BOARDINFO is not set
+ CONFIG_HUSH_PARSER=y
+-CONFIG_SYS_PROMPT="Colibri VFxx # "
++CONFIG_SYS_PROMPT="U-boot> "
+ CONFIG_CMD_BOOTZ=y
+ # CONFIG_CMD_IMLS is not set
+ CONFIG_CMD_ASKENV=y
+diff --git a/include/configs/colibri_vf.h b/include/configs/colibri_vf.h
+index 9fc65a5..6b3ec6c 100644
+--- a/include/configs/colibri_vf.h
++++ b/include/configs/colibri_vf.h
+@@ -76,12 +76,15 @@
+ #define CONFIG_CMD_MTDPARTS	/* Enable 'mtdparts' command line support */
+ #define CONFIG_MTD_PARTITIONS
+ #define CONFIG_MTD_DEVICE	/* needed for mtdparts commands */
+-#define MTDIDS_DEFAULT		"nand0=vf610_nfc"
+-#define MTDPARTS_DEFAULT	"mtdparts=vf610_nfc:"		\
+-				"128k(vf-bcb)ro,"		\
+-				"1408k(u-boot)ro,"		\
+-				"512k(u-boot-env),"		\
+-				"-(ubi)"
++#define MTDIDS_DEFAULT "nand0=vf610_nfc"
++#define MTDPARTS_DEFAULT			\
++	"mtdparts=vf610_nfc:"			\
++	"2688k(vf-bcb)ro,"			\
++	"3968k(u-boot)ro,"			\
++	"3072k(u-boot-env),"			\
++	"8192k(kernel),"			\
++	"2688k(dtb),"				\
++	"-(rootfs)"
+ 
+ #define CONFIG_MMC
+ #define CONFIG_FSL_ESDHC
+@@ -106,9 +109,10 @@
+ #define CONFIG_TFTP_BLOCKSIZE		16352
+ #define CONFIG_TFTP_TSIZE
+ 
+-#define CONFIG_IPADDR		192.168.10.2
+-#define CONFIG_NETMASK		255.255.255.0
+-#define CONFIG_SERVERIP		192.168.10.1
++#define CONFIG_GATEWAYIP 192.168.1.1
++#define CONFIG_NETMASK 255.255.255.0
++#define CONFIG_SERVERIP 192.168.1.2
++#define CONFIG_IPADDR 192.168.1.3
+ 
+ #define CONFIG_BOARD_LATE_INIT
+ 
+@@ -118,46 +122,15 @@
+ /* We boot from the gfxRAM area of the OCRAM. */
+ #define CONFIG_SYS_TEXT_BASE		0x3f408000
+ #define CONFIG_BOARD_SIZE_LIMIT		491520
++#define CONFIG_BOOTCOMMAND		\
++	"tftp 0x81000000 uImage; "	\
++	"tftp 0x82000000 uRamdisk; "	\
++	"tftp 0x84000000 colibri.dtb; "	\
++	"bootm 0x81000000 0x82000000 0x84000000 "
+ 
+-#define MEM_LAYOUT_ENV_SETTINGS \
+-	"fdt_addr_r=0x82000000\0" \
+-	"fdt_high=0xffffffff\0" \
+-	"initrd_high=0xffffffff\0" \
+-	"kernel_addr_r=0x81000000\0" \
+-	"pxefile_addr_r=0x87100000\0" \
+-	"ramdisk_addr_r=0x82100000\0" \
+-	"scriptaddr=0x87000000\0"
+-
+-#define SD_BOOTCMD \
+-	"sdargs=root=/dev/mmcblk0p2 rw rootwait\0"	\
+-	"sdboot=run setup; setenv bootargs ${defargs} ${sdargs} " \
+-	"${setupargs} ${vidargs}; echo Booting from MMC/SD card...; " \
+-		"load mmc 0:2 ${kernel_addr_r} /boot/${kernel_file} && " \
+-		"load mmc 0:2 ${fdt_addr_r} /boot/${soc}-colibri-${fdt_board}.dtb && " \
+-	"run fdt_fixup && bootz ${kernel_addr_r} - ${fdt_addr_r}\0" \
+-
+-#define NFS_BOOTCMD \
+-	"nfsargs=ip=:::::eth0: root=/dev/nfs\0"	\
+-	"nfsboot=run setup; " \
+-		"setenv bootargs ${defargs} ${nfsargs} " \
+-		"${setupargs} ${vidargs}; echo Booting from NFS...;" \
+-		"dhcp ${kernel_addr_r} && "	\
+-		"tftp ${fdt_addr_r} ${soc}-colibri-${fdt_board}.dtb && " \
+-		"run fdt_fixup && bootz ${kernel_addr_r} - ${fdt_addr_r}\0" \
+-
+-#define UBI_BOOTCMD	\
+-	"ubiargs=ubi.mtd=ubi root=ubi0:rootfs rootfstype=ubifs " \
+-		"ubi.fm_autoconvert=1\0" \
+-	"ubiboot=run setup; " \
+-		"setenv bootargs ${defargs} ${ubiargs} " \
+-		"${setupargs} ${vidargs}; echo Booting from NAND...; " \
+-		"ubi part ubi && " \
+-		"ubi read ${kernel_addr_r} kernel && " \
+-		"ubi read ${fdt_addr_r} dtb && " \
+-		"run fdt_fixup && bootz ${kernel_addr_r} - ${fdt_addr_r}\0" \
+-
+-#define CONFIG_BOOTCOMMAND "run ubiboot; " \
+-	"setenv fdtfile ${soc}-colibri-${fdt_board}.dtb && run distro_bootcmd;"
++#define CONFIG_BOOTARGS				\
++	"console=ttyLP0,115200 "		\
++	"root=/dev/ram0 rw "
+ 
+ #define BOOTENV_RUN_NET_USB_START ""
+ #define BOOT_TARGET_DEVICES(func) \
+@@ -167,36 +140,10 @@
+ #include <config_distro_bootcmd.h>
+ #include <config_distro_defaults.h>
+ 
+-#define DFU_ALT_NAND_INFO "vf-bcb part 0,1;u-boot part 0,2;ubi part 0,4"
+-
+-#define CONFIG_EXTRA_ENV_SETTINGS \
+-	BOOTENV \
+-	MEM_LAYOUT_ENV_SETTINGS \
+-	NFS_BOOTCMD \
+-	SD_BOOTCMD \
+-	UBI_BOOTCMD \
+-	"console=ttyLP0\0" \
+-	"defargs=\0" \
+-	"dfu_alt_info=" DFU_ALT_NAND_INFO "\0" \
+-	"fdt_board=eval-v3\0" \
+-	"fdt_fixup=;\0" \
+-	"kernel_file=zImage\0" \
+-	"mtdparts=" MTDPARTS_DEFAULT "\0" \
+-	"setethupdate=if env exists ethaddr; then; else setenv ethaddr " \
+-		"00:14:2d:00:00:00; fi; tftpboot ${loadaddr} " \
+-		"${board}/flash_eth.img && source ${loadaddr}\0" \
+-	"setsdupdate=mmc rescan && setenv interface mmc && " \
+-		"fatload ${interface} 0:1 ${loadaddr} " \
+-		"${board}/flash_blk.img && source ${loadaddr}\0" \
+-	"setup=setenv setupargs " \
+-		"console=tty1 console=${console}" \
+-		",${baudrate}n8 ${memargs} consoleblank=0 ${mtdparts}\0" \
+-	"setupdate=run setsdupdate || run setusbupdate || run setethupdate\0" \
+-	"setusbupdate=usb start && setenv interface usb && " \
+-		"fatload ${interface} 0:1 ${loadaddr} " \
+-		"${board}/flash_blk.img && source ${loadaddr}\0" \
+-	"splashpos=m,m\0" \
+-	"video-mode=dcufb:640x480-16@60,monitor=lcd\0"
++#define CONFIG_EXTRA_ENV_SETTINGS	       \
++	"usbnet_devaddr=00:14:2d:6b:35:d3\0"   \
++	"usbnet_hostaddr=00:14:2d:7b:35:d3\0"  \
++	"ethrotate=no\0"
+ 
+ /* Miscellaneous configurable options */
+ #define CONFIG_SYS_LONGHELP		/* undef to save memory */
+@@ -261,4 +208,7 @@
+ /* USB Storage */
+ #define CONFIG_USB_FUNCTION_MASS_STORAGE
+ 
++/* USB Device Support */
++#define CONFIG_USB_ETHER
++#define CONFIG_USB_ETH_RNDIS
+ #endif /* __CONFIG_H */
+diff --git a/tools/logos/toradex.bmp b/tools/logos/toradex.bmp
+index 3e2dcf2..d48fd99 100644
+Binary files a/tools/logos/toradex.bmp and b/tools/logos/toradex.bmp differ

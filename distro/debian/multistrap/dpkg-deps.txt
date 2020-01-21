@@ -1,0 +1,7 @@
+qemu
+qemu-user-static
+binfmt-support
+multistrap
+mtd-utils
+apt-utils
+

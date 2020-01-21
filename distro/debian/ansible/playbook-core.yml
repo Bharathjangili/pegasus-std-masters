@@ -1,0 +1,33 @@
+---
+# Install Boot, library, and other requirement package.
+- name: Install Boot, library, and other requirement package.
+  apt:
+    name: "{{ item }}"
+    state: present
+    install_recommends: no
+    force: yes
+
+  with_items:
+    # Booting packages
+    # bootloader package
+    - u-boot
+
+    # kernel package
+    - linux
+    
+    # Testing libraries packages
+    # Testing framework
+    - mraa
+    - libsoc
+    - upm
+
+    # other requirement package    
+    # modules management package
+    - kmod
+    
+    # mtd support packages
+    - mtd-utils
+
+    # Virtual RTC
+    - fake-hwclock
+...

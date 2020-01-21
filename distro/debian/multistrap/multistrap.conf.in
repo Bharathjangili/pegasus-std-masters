@@ -1,0 +1,25 @@
+[General]
+cleanup=true
+noauth=true
+unpack=true
+debootstrap=Packages
+aptsources=Packages
+ignorenativearch=true
+
+#
+# sh and find is required by dpkg
+# grep is required by postinst scripts
+# base-passwd creates /etc/passwd /etc/group
+# sed is required by postinst scripts
+# base-files creates /etc/shadow /etc/motd /etc/issue etc.
+# sysvinit and mount is required by initscripts
+# e2fsprogs is required by filesystem check at bootup
+# gzip is required by syslog
+# hostname is required /etc/init.d/hostname
+#
+
+[Packages]
+packages=apt base-passwd dash findutils coreutils grep libc-bin mawk sed netbase net-tools ethtool udev iproute iputils-ping ifupdown isc-dhcp-client locales adduser less wget vim rsyslog bash sed base-files login sysvinit mount e2fsprogs gzip hostname ansible
+source=http://ftp.us.debian.org/debian
+keyring=debian-archive-keyring
+suite=@SUITE@

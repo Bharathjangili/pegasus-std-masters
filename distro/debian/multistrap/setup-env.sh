@@ -1,0 +1,2 @@
+export TARGET_FS_DIR="$TARGET/rootfs-$CFG_DEB_ARCH-$CFG_DEB_RELEASE"
+export TOP_DIR=$(pwd)

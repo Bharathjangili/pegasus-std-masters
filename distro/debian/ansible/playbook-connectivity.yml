@@ -1,0 +1,57 @@
+---
+- name: Install Wireless tools  
+# Network tools package install
+  apt:
+    name: "{{ item }}"
+    state: latest
+    install_recommends: no
+    force: yes
+
+  with_items:
+    # Wireless configuratin tool
+    - wireless-tools
+    - iw
+    # wifi monitoring tool
+    - wavemon
+    # Packet Analyzing Tool
+    - tshark
+    # Host Access Point Daemon
+    - hostapd
+    # Station Configuration
+    - wpasupplicant
+    # DNS server
+    - dnsmasq
+    # Editing Tool
+    - nano
+    # Tool to configure ip tables
+    - iptables
+    # SSH server
+    - openssh-server
+    # SSH Client
+    - openssh-client
+    - netcat
+    # performance analysis tool
+    - iperf
+    
+    # Terminal Editor support tool
+    - ncurses-base 
+    - libncurses5
+    
+    # TPlink wireless adaptor firmware
+    - firmware-atheros
+    # Dinda wireless adaptor firmware
+    - firmware-misc-nonfree
+    
+    # D-Link wifi dongle driver
+    - rtl8812au-8821au-linux
+
+    # TPlink wifi dongle driver
+    - rtl8192eu-linux-driver
+
+    # D-Link and TP-link(Dual Antenna) support hostapd 
+    - hostapd-rtl
+
+    # Utilities for IPC
+    - dbus
+    - libdbus-1-dev
+...

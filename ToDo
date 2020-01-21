@@ -1,0 +1,16 @@
+== Enhancements
+
+* Adding Jffs2
+* Adding Ubifs
+* Adding dbus
+
+== Improvements
+
+* Move fs image script to fs folder
+  - distro/debian/pegasus-std-image -> fs/ext-image
+
+== Bugs
+
+* building breaking because of pointing to master branch of packages
+* RTC Fix
+

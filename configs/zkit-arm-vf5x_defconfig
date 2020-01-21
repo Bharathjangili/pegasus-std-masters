@@ -1,0 +1,9 @@
+ARCH=arm
+LINUX_CROSS_COMPILE=arm-none-linux-gnueabi-
+UBOOT_CROSS_COMPILE=arm-none-eabi-
+JOBS=-j16
+CC=arm-none-linux-gnueabi-gcc
+
+BOARD_NAME=zkit-arm-vf5x
+BOOTLOADER=u-boot
+PACKAGES=rtl8812AU_8821AU_linux rtl8192eu-linux-driver hostapd-rtl libsoc mraa upm linux-serial-test i2c-tools

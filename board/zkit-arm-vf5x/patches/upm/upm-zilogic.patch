@@ -1,0 +1,410 @@
+diff -Naur upm_old/examples/c/led.c upm/examples/c/led.c
+--- upm_old/examples/c/led.c	2017-07-05 12:11:50.803136439 +0000
++++ upm/examples/c/led.c	2017-07-05 12:16:53.983127706 +0000
+@@ -11,7 +11,7 @@
+ 
+ int main(void)
+ {
+-    led_context dev = led_init(2);
++    led_context dev = led_init(7);
+     while(1){
+         if(led_on(dev) != UPM_SUCCESS){
+             printf("problem turning the LED on\n");
+diff -Naur upm_old/examples/c/zkit_i2c_temp.c upm/examples/c/zkit_i2c_temp.c
+--- upm_old/examples/c/zkit_i2c_temp.c	1970-01-01 00:00:00.000000000 +0000
++++ upm/examples/c/zkit_i2c_temp.c	2017-07-05 12:14:55.831131109 +0000
+@@ -0,0 +1,29 @@
++/*
++ * Zkit-Temperature sensor testing
++ */
++
++#include <stdio.h>
++
++#include "zkit_i2c.h"
++
++int main(void)
++{
++    zkit_temp_context sensor = zkit_temp_init(ZKIT_TEMP_DEFAULT_I2C_BUS,
++	                              ZKIT_TEMP_DEFAULT_I2C_ADDR);
++    if (!sensor) {
++	puts("zkit_temp_init() failed. \n");
++	return 0;	    
++    }
++
++    while (true) {
++	zkit_temp_get_temperature(sensor);
++	
++	upm_delay_ms(500);
++    }
++
++    puts("Exiting...");
++    zkit_temp_close(sensor);
++    
++    return 0;
++}
++
+diff -Naur upm_old/examples/c/zkit_spi_7seg.c upm/examples/c/zkit_spi_7seg.c
+--- upm_old/examples/c/zkit_spi_7seg.c	1970-01-01 00:00:00.000000000 +0000
++++ upm/examples/c/zkit_spi_7seg.c	2017-07-05 13:35:32.094991798 +0000
+@@ -0,0 +1,43 @@
++/*
++ * zkit-spi-4digit-7segment
++ */
++
++#include <stdio.h>
++#include "upm_utilities.h"
++
++#include "zkit_spi.h"
++
++#define SPI_CS_PIN 24
++#define NOB 1 //Number of bytes
++
++int main(void)
++{
++
++  uint8_t data = 0x06;  
++  uint8_t *recv = NULL;
++  uint8_t i = 0;
++  int len = 1;
++  
++  zkit_spi_context sseg = zkit_spi_init(ZKIT_DEFAULT_SPI_BUS, SPI_CS_PIN);
++  if (!sseg) {
++    puts("zkit_spi_init() failed.");
++    return 0;
++  }
++  
++  puts("Hello, SPI initialised");
++
++  while (1) {
++    recv = zkit_spi_write_buf(sseg,&data,NOB);    
++    printf("writing - %x Received %x\n ", data, *recv); 
++    i++;
++    
++    if (i == len)
++      {
++	data ^= 1 << 0;
++	sleep(5);
++	i = 0;
++      }  
++  }
++  
++  return 0;
++}
+diff -Naur upm_old/src/zkit_i2c/CMakeLists.txt upm/src/zkit_i2c/CMakeLists.txt
+--- upm_old/src/zkit_i2c/CMakeLists.txt	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_i2c/CMakeLists.txt	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,6 @@
++upm_mixed_module_init (NAME zkit-i2c
++    DESCRIPTION "zkit temperature sensor"
++    C_HDR zkit_i2c.h
++    C_SRC zkit_i2c.c
++    REQUIRES mraa utilities-c)
++target_link_libraries(${libnamec} m)
+diff -Naur upm_old/src/zkit_i2c/zkit_i2c.c upm/src/zkit_i2c/zkit_i2c.c
+--- upm_old/src/zkit_i2c/zkit_i2c.c	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_i2c/zkit_i2c.c	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,83 @@
++/*
++ * zkit-i2c temperature sensor c file
++ */
++
++#include <unistd.h>
++#include <assert.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "upm_utilities.h"
++
++#include "zkit_i2c.h"
++
++
++zkit_temp_context zkit_temp_init(int bus, int addr)
++{
++    zkit_temp_context dev =
++	(zkit_temp_context)malloc(sizeof(struct _zkit_temp_context));
++    
++    if (!dev)
++	return NULL;
++    
++    memset((void *)dev, 0, sizeof(struct _zkit_temp_context));
++
++    // make sure MRAA is initialized
++    if (mraa_init() != MRAA_SUCCESS) {
++	printf("%s: mraa_init() failed.\n", __FUNCTION__);
++        zkit_temp_close(dev);
++        return NULL;
++    }
++
++    
++    if (!(dev->i2c = mraa_i2c_init(bus)))
++    {
++        printf("%s: mraa_i2c_init() failed.\n", __FUNCTION__);
++        zkit_temp_close(dev);
++        return NULL;
++    }
++
++    if (mraa_i2c_address(dev->i2c, addr))
++    {
++        printf("%s: mraa_i2c_address() failed.\n", __FUNCTION__);
++        zkit_temp_close(dev);
++        return NULL;
++    }
++
++    return dev;
++}
++
++//temp function close
++void zkit_temp_close(zkit_temp_context dev)
++{
++    assert(dev != NULL);
++
++    if (dev->i2c)
++	mraa_i2c_stop(dev->i2c);
++    
++    free(dev);
++}
++
++// get temperature from temperature sensor
++void zkit_temp_get_temperature(const zkit_temp_context dev)
++{
++    assert(dev != NULL);
++
++    dev->temp_l3bit = 0xe0 & zkit_temp_read_reg(dev, ZKIT_TEMP_LB8BIT_REG);
++    dev->temp_h8bit = zkit_temp_read_reg(dev, ZKIT_TEMP_HB8BIT_REG);
++
++    if ((dev->temp_h8bit) < 0) {
++	puts("i2c_temp_failed");
++	exit(1);
++    }
++
++    printf("Temperature is %d.%d\n",dev->temp_h8bit,dev->temp_l3bit);
++}
++
++// Read the temperature register value in  NXP SA56004
++uint8_t zkit_temp_read_reg(const zkit_temp_context dev, uint8_t reg)
++{
++    assert(dev != NULL);
++    
++    return (uint8_t)mraa_i2c_read_byte_data(dev->i2c, reg);	    
++ }
+diff -Naur upm_old/src/zkit_i2c/zkit_i2c.h upm/src/zkit_i2c/zkit_i2c.h
+--- upm_old/src/zkit_i2c/zkit_i2c.h	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_i2c/zkit_i2c.h	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,66 @@
++/*
++ * zkit-temp header file
++ */
++
++/*
++ * i2c based temp-sensor  based on NXP SA56004 
++ */
++
++#pragma once
++
++#include <unistd.h>
++#include <mraa/i2c.h>
++#include <stddef.h>
++
++#include "upm.h"
++
++#define ZKIT_TEMP_DEFAULT_I2C_BUS 0
++#define ZKIT_TEMP_DEFAULT_I2C_ADDR 0x48
++
++
++/**
++ * Device content
++ */
++
++typedef struct _zkit_temp_context {
++    mraa_i2c_context i2c;
++    
++    uint8_t temp_l3bit;
++    uint8_t temp_h8bit;;
++ 
++} *zkit_temp_context;
++
++ /**
++  * ZKIT-temp-SA56004-register
++  *
++  */
++typedef enum {
++    ZKIT_TEMP_HB8BIT_REG = 0x00,
++    ZKIT_TEMP_LB8BIT_REG = 0x22
++} ZKIT_TEMP_REGS_T;
++
++
++    /**
++     * ZKIT_TEMP_initialization
++     *
++     * @param bus I2C bus number.
++     * @param addr I2C address of the device.
++     * @return Device context, or NULL if an error occurred.
++     */   
++zkit_temp_context zkit_temp_init(int bus, int addr);
++/**
++ * zkit close function
++ */
++
++void zkit_temp_close(zkit_temp_context dev);
++
++/**
++ * zkit get temp
++ */
++void zkit_temp_get_temperature(const zkit_temp_context dev);
++
++
++/**
++ * zkit read temp register
++ */
++uint8_t zkit_temp_read_reg(const zkit_temp_context dev, uint8_t reg);
+diff -Naur upm_old/src/zkit_spi/CMakeLists.txt upm/src/zkit_spi/CMakeLists.txt
+--- upm_old/src/zkit_spi/CMakeLists.txt	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_spi/CMakeLists.txt	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,7 @@
++upm_mixed_module_init (NAME zkit-spi
++  DESCRIPTION "Zkit-spi-4digit-7segment display"
++  C_HDR zkit_spi.h
++  C_SRC zkit_spi.c
++  REQUIRES mraa utilities-c)
++target_link_libraries(${libnamec} m)
++
+diff -Naur upm_old/src/zkit_spi/zkit_spi.c upm/src/zkit_spi/zkit_spi.c
+--- upm_old/src/zkit_spi/zkit_spi.c	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_spi/zkit_spi.c	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,76 @@
++/*
++ * zkit-spi-7seg display source file
++ */
++
++#include <unistd.h>
++#include <assert.h>
++
++#include <string.h>
++
++#include "upm_utilities.h"
++#include "zkit_spi.h"
++
++zkit_spi_context zkit_spi_init(int bus, int cs)
++{
++  zkit_spi_context dev =
++    (zkit_spi_context)malloc(sizeof(struct _zkit_spi_context));
++  
++  if (!dev)
++    return NULL;
++  
++  //zero out context
++  memset((void *)dev, 0, sizeof(struct _zkit_spi_context));
++  
++  // make sure MRAA is initialized
++  if (mraa_init() != MRAA_SUCCESS) {
++    printf("%s: mraa_init() failed.\n", __FUNCTION__);
++    zkit_spi_close(dev);
++    return NULL;
++  }
++
++
++  if (!(dev->spi = mraa_spi_init(bus))) {
++    printf("%s:mraa_spi_init() failed.\n", __FUNCTION__);
++    zkit_spi_close(dev);
++    return NULL;
++  }
++
++  /*
++  if (cs >=0) {
++    if (!(dev->gpioCS = mraa_gpio_init(cs)))
++      {
++	printf("%s:mraa_gpio_init() failed.\n", __FUNCTION__);
++	zkit_spi_close(dev);
++	return NULL;
++      }
++    mraa_gpio_dir(dev->gpioCS, MRAA_GPIO_OUT);	
++  }
++  */
++
++  mraa_spi_mode(dev->spi, MRAA_SPI_MODE0);
++  if (mraa_spi_frequency(dev->spi, 5000000))
++    {
++      printf("%s: mraa_spi_frequency() failed.\n", __FUNCTION__);
++      zkit_spi_close(dev);
++      return NULL;
++    }
++  
++  return dev;
++}
++
++uint8_t *zkit_spi_write_buf(const zkit_spi_context dev, uint8_t *data, int len)
++{
++  return mraa_spi_write_buf(dev->spi,data,len);
++}
++
++void zkit_spi_close(zkit_spi_context dev)
++{
++  assert(dev != NULL);
++
++  if (dev->spi)
++    mraa_spi_stop(dev->spi);
++
++  free(dev);
++}
++
++      
+diff -Naur upm_old/src/zkit_spi/zkit_spi.h upm/src/zkit_spi/zkit_spi.h
+--- upm_old/src/zkit_spi/zkit_spi.h	1970-01-01 00:00:00.000000000 +0000
++++ upm/src/zkit_spi/zkit_spi.h	2017-07-05 12:15:35.431129969 +0000
+@@ -0,0 +1,56 @@
++/*
++ * zkit-spi header file
++ */
++
++/*
++ * spi based 4digit sseg display 
++ */
++#pragma once
++
++#include <unistd.h>
++#include <string.h>
++#include <stddef.h>
++
++#include <mraa/i2c.h>
++#include <mraa/spi.h>
++#include <mraa/gpio.h>
++
++#include "upm.h"
++
++#define ZKIT_DEFAULT_SPI_BUS 0
++#define ZKIT_DEFAULT_SPI_MODE 0
++#define ZKIT_DEFAULT_SPI_FREQUENCY 1000000
++
++/*
++ * Device content
++ */
++
++typedef struct _zkit_spi_context {
++    mraa_spi_context spi;
++    mraa_gpio_context gpioCS; //spi cs pin
++
++  //use the FIFO
++  //bool useFIFO;  
++} *zkit_spi_context;
++
++ /*
++  * ZKIT-SPI based 4digit sseg display
++  *
++  */
++zkit_spi_context zkit_spi_init(int bus, int cs);
++
++/*
++ * zkit close function
++ */
++
++void zkit_spi_close(zkit_spi_context dev);
++
++/*
++ * zkit get temp
++ */
++uint8_t *zkit_spi_write_buf(const zkit_spi_context dev, uint8_t *data, int len);
++
++
++/*
++ * zkit read temp register
++ */

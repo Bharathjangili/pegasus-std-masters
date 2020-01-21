@@ -1,0 +1,3 @@
+Acquire::http::proxy "http://172.16.0.2:3142";
+# apt-cacher-ng does not support HTTPS
+Acquire::https::proxy "DIRECT";

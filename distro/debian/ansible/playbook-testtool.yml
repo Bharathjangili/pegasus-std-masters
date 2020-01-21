@@ -1,0 +1,17 @@
+---
+# Install the required UART and I2C test tool packages.
+- name: Install test tool package.
+  apt:
+    name: "{{ item }}"
+    state: present
+    install_recommends: no
+    force: yes
+
+  with_items:
+    # UART test-tool packages
+    - linux-serial-test
+    - lrzsz    
+
+    # I2C test-tool package    
+    - i2ctool
+...

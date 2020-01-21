@@ -1,0 +1,64 @@
+---
+- name: Pegasus project recommends package Download in vagrant
+  hosts: localhost
+  sudo: yes
+  tasks:
+
+  # copy 80proxy for local server
+  - copy: >
+      src=../ansible/files/etc/apt/apt.conf.d/80proxy
+      dest=/etc/apt/apt.conf.d/80proxy
+      owner=root group=root mode=644
+      
+
+  # Run apt-get update before installing anything.
+  - apt: update_cache=yes
+
+  # Required to update date & time to avoid unforeseen problems related to system time
+
+  # recommends package install
+  - apt: name={{ item }} state=latest install_recommends=no force=yes
+    with_items:
+      # cmake for library building
+      - cmake 
+
+      # for download git project
+      - git
+
+      # package is required for building Debian packages 
+      - build-essential
+
+      # SWIG is a compiler that makes it easy to integrate C and C++ code with other languages
+      - swig
+
+      # upm recommends package
+      - python3-pkgconfig
+
+      # upm recommends package
+      - libevent-pthreads-2.0-5
+
+      # package creating tool
+      - fpm-equivs
+      - multistrap
+
+      # qemu hardware emulator package
+      - qemu-user-static
+
+      # qemu-user-static dependancy package
+      - binfmt-support
+
+      # retrieves files from the web
+      - wget
+
+      # unzip the *.zip files
+      - unzip
+
+      # fast compression program 
+      - lzop
+      
+      # libsoc dependency package
+      - dh-autoreconf
+
+      #create device mappings for partitions
+      - kpartx
+...

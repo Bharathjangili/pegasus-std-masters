@@ -1,0 +1,336 @@
+Index: mraa/api/mraa/types.h
+===================================================================
+--- mraa.orig/api/mraa/types.h
++++ mraa/api/mraa/types.h
+@@ -56,7 +56,7 @@ typedef enum {
+ #endif
+     MRAA_PHYBOARD_WEGA = 14,        /**< The phyBOARD-Wega */
+     MRAA_DE_NANO_SOC = 15,          /**< Terasic DE-Nano-SoC Board */
+-
++    MRAA_ZKIT_VF_51 = 16,           /*Zkit arm vf51 board*/
+     // USB platform extenders start at 256
+     MRAA_FTDI_FT4222 = 256,         /**< FTDI FT4222 USB to i2c bridge */
+ 
+Index: mraa/include/arm/zkit_arm_vf51.h
+===================================================================
+--- /dev/null
++++ mraa/include/arm/zkit_arm_vf51.h
+@@ -0,0 +1,22 @@
++
++#pragma once
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#include "mraa_internal.h"
++
++#define MRAA_ZKIT_ARM_VF51_PIN_COUNT 40
++#define MRAA_ZKIT_ARM_VF51_GPIO_COUNT 17
++#define MRAA_ZKIT_ARM_VF51_SPI_COUNT 1  
++#define MRAA_ZKIT_ARM_VF51_I2C_COUNT 1
++#define MRAA_ZKIT_ARM_VF51_UART_COUNT 2
++#define MRAA_ZKIT_ARM_VF51_AIO_COUNT 5
++
++mraa_board_t *
++        mraa_zkit_arm_vf51();
++
++#ifdef __cplusplus
++}
++#endif
+Index: mraa/src/CMakeLists.txt
+===================================================================
+--- mraa.orig/src/CMakeLists.txt
++++ mraa/src/CMakeLists.txt
+@@ -90,6 +90,7 @@ set (mraa_LIB_ARM_SRCS_NOAUTO
+   ${PROJECT_SOURCE_DIR}/src/arm/phyboard.c
+   ${PROJECT_SOURCE_DIR}/src/arm/banana.c
+   ${PROJECT_SOURCE_DIR}/src/arm/de_nano_soc.c
++  ${PROJECT_SOURCE_DIR}/src/arm/zkit_arm_vf51.c
+ )
+ 
+ set (mraa_LIB_MOCK_SRCS_NOAUTO
+Index: mraa/src/arm/arm.c
+===================================================================
+--- mraa.orig/src/arm/arm.c
++++ mraa/src/arm/arm.c
+@@ -32,6 +32,7 @@
+ #include "arm/beaglebone.h"
+ #include "arm/phyboard.h"
+ #include "arm/raspberry_pi.h"
++#include "arm/zkit_arm_vf51.h"
+ #include "mraa_internal.h"
+ 
+ 
+@@ -62,7 +63,9 @@ mraa_arm_platform()
+                     platform_type = MRAA_96BOARDS;
+                 } else if (strstr(line, "s900")) {
+                     platform_type = MRAA_96BOARDS;
+-                } else if (strstr(line, "sun7i")) {
++                } else if (strstr(line, "Freescale Vybrid VF5xx/VF6xx (Device Tree)")) {
++                    platform_type = MRAA_ZKIT_VF_51;
++               } else if (strstr(line, "sun7i")) {
+                     if (mraa_file_contains("/proc/device-tree/model", "Banana Pro")) {
+                         platform_type = MRAA_BANANA;
+                     } else if (mraa_file_contains("/proc/device-tree/model",
+@@ -115,6 +118,9 @@ mraa_arm_platform()
+         case MRAA_DE_NANO_SOC:
+             plat = mraa_de_nano_soc();
+             break;
++        case MRAA_ZKIT_VF_51:
++	    plat = mraa_zkit_arm_vf51();
++	    break;
+         default:
+             plat = NULL;
+             syslog(LOG_ERR, "Unknown Platform, currently not supported by MRAA");
+Index: mraa/src/arm/zkit_arm_vf51.c
+===================================================================
+--- /dev/null
++++ mraa/src/arm/zkit_arm_vf51.c
+@@ -0,0 +1,246 @@
++#include <mraa/common.h>
++#include <stdarg.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/mman.h>
++
++#include "arm/zkit_arm_vf51.h"
++#include "common.h"
++
++#define PLATFORM_NAME_VF50 "Colibri vf50"
++#define DT_BASE "/proc/device-tree"
++
++static char* zkit_serialdev[MRAA_ZKIT_ARM_VF51_UART_COUNT]={"/dev/ttyLP1", "/dev/ttyLP2"};
++
++//sysfs pins 
++int zkit_vf51_gpio_pins[9] = {
++  70, 69, 68, 67, 66, 65, 64, 63, 29
++};
++//physical pins of zkit vf 51 header
++static int board_index[9]={
++  7, 11, 12, 13, 15, 16, 18, 22, 32
++};
++void
++mraa_zkit_arm_vf51_pininfo(mraa_board_t* board, int index, int sysfs_pin, char* fmt, ...)
++{
++  va_list arg_ptr;
++  if (index > board->phy_pin_count)
++    return;
++
++  mraa_pininfo_t* pininfo = &board->pins[index];
++  va_start(arg_ptr, fmt);
++  vsnprintf(pininfo->name, MRAA_PIN_NAME_SIZE, fmt, arg_ptr);
++  va_end(arg_ptr);
++  if (sysfs_pin >= 0)
++    pininfo->capabilities = (mraa_pincapabilities_t){ 1, 1, 1, 0, 0, 0, 0, 0 };
++  else
++    pininfo->capabilities = (mraa_pincapabilities_t){ 0, 0, 0, 0, 0, 0, 0, 0 };
++  pininfo->gpio.pinmap = sysfs_pin;
++  pininfo->gpio.mux_total = 0;
++}
++
++mraa_board_t*
++mraa_zkit_arm_vf51()
++{
++  int i;
++  int* vf51_gpio_pins = NULL;
++  
++  mraa_board_t* b = (mraa_board_t*) calloc(1, sizeof(mraa_board_t));
++  if (b == NULL) {
++    return NULL;
++  }
++
++  // pin mux for buses are setup by default by kernel so tell mraa to ignore them
++  b->no_bus_mux = 1;
++  b->phy_pin_count = MRAA_ZKIT_ARM_VF51_PIN_COUNT + 1;
++
++  if (mraa_file_exist(DT_BASE "/model")) {
++    // We are on a modern kernel, great!!!!
++    if (mraa_file_contains(DT_BASE "/model", "Toradex Colibri VF50 on Colibri Evaluation Board")) {
++      b->platform_name = PLATFORM_NAME_VF50;
++      vf51_gpio_pins = zkit_vf51_gpio_pins;
++      b->uart_dev[0].device_path = zkit_serialdev[0];
++      b->uart_dev[1].device_path = zkit_serialdev[1];
++    } else {
++      printf("Unknown Board\n");
++      exit(0);
++    }
++  }
++
++  // UART
++  b->uart_dev_count = MRAA_ZKIT_ARM_VF51_UART_COUNT ;
++  b->def_uart_dev = 1; 
++
++  // I2C
++  //  if (strcmp(b->platform_name,PLATFORM_NAME_VF50))
++    b->i2c_bus_count = MRAA_ZKIT_ARM_VF51_I2C_COUNT;
++
++/* // SPI */
++  b->spi_bus_count = MRAA_ZKIT_ARM_VF51_SPI_COUNT;
++
++  b->adv_func = (mraa_adv_func_t*) calloc(1, sizeof(mraa_adv_func_t));
++  if (b->adv_func == NULL) {
++    free(b);
++    return NULL;
++  }
++
++  b->pins = (mraa_pininfo_t*) malloc(sizeof(mraa_pininfo_t) * b->phy_pin_count);
++  if (b->pins == NULL) {
++    free(b->adv_func);
++    free(b);
++    return NULL;
++  }
++  for (i = 0; i < 9; i++) {
++    mraa_zkit_arm_vf51_pininfo(b, board_index[i], vf51_gpio_pins ? vf51_gpio_pins[i] : -1, "GPIO-%c", 'D' + board_index[i]);
++  }
++
++  strncpy(b->pins[29].name, "PIN29", MRAA_PIN_NAME_SIZE); 
++  b->pins[29].capabilities = (mraa_pincapabilities_t){ 1, 1, 1, 0, 0, 0, 1, 0 };  // GPIO & PWM & ADC
++  b->pins[29].gpio.pinmap = 23;
++
++
++  strncpy(b->pins[31].name, "PIN31", MRAA_PIN_NAME_SIZE); 
++  b->pins[31].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 0 }; //GPIO  
++  b->pins[31].gpio.pinmap = 49;
++
++  strncpy(b->pins[33].name, "PIN33", MRAA_PIN_NAME_SIZE); 
++  b->pins[33].capabilities = (mraa_pincapabilities_t){ 1, 1, 1, 0, 0, 0, 1, 0 };  // GPIO & PWM & ADC
++  b->pins[33].gpio.pinmap = 25;
++
++
++  strncpy(b->pins[35].name, "PIN35", MRAA_PIN_NAME_SIZE); 
++  b->pins[35].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 0 };
++  b->pins[35].gpio.pinmap = 82;
++  
++  strncpy(b->pins[36].name, "PIN36", MRAA_PIN_NAME_SIZE); 
++  b->pins[36].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 0 };
++  b->pins[36].gpio.pinmap = 81;
++
++  
++  strncpy(b->pins[40].name, "PIN40", MRAA_PIN_NAME_SIZE); 
++  b->pins[40].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 0 };
++  b->pins[40].gpio.pinmap = 34;
++  
++  
++  //i2c pins
++  strncpy(b->pins[3].name, "SDA0", MRAA_PIN_NAME_SIZE); 
++  b->pins[3].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 1, 0, 0 };
++  strncpy(b->pins[5].name, "SCL0", MRAA_PIN_NAME_SIZE); 
++  b->pins[5].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 1, 0, 0 };
++
++  //uart pins
++  strncpy(b->pins[8].name, "UART1_TX", MRAA_PIN_NAME_SIZE); 
++  b->pins[8].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 0, 0, 1 };
++  strncpy(b->pins[10].name, "UART1_RX", MRAA_PIN_NAME_SIZE); 
++  b->pins[10].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 0, 0, 1};
++  strncpy(b->pins[37].name, "UART2_TX", MRAA_PIN_NAME_SIZE); 
++  b->pins[37].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 1};
++  strncpy(b->pins[38].name, "UART2_RX", MRAA_PIN_NAME_SIZE); 
++  b->pins[38].capabilities = (mraa_pincapabilities_t){ 1, 1, 0, 0, 0, 0, 0, 1};
++
++  //bus definitons
++  b->def_i2c_bus = 0;
++  b->i2c_bus[0].sda = 3;
++  b->i2c_bus[0].scl = 5;
++
++  b->gpio_count = MRAA_ZKIT_ARM_VF51_GPIO_COUNT;
++  
++ // ADC PINS
++
++  b->aio_count = MRAA_ZKIT_ARM_VF51_AIO_COUNT;
++  b->adc_raw = 10;
++  b->adc_supported = 12;
++
++  strncpy(b->pins[8].name, "ADC0_SE4", MRAA_PIN_NAME_SIZE); 
++  b->pins[8].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 0, 1, 1};  // ADC and UART
++  b->pins[8].aio.pinmap = 4;
++  b->aio_non_seq = 1;
++  b->aio_dev[0].pin = 8;
++
++  b->pins[26].aio.pinmap = 5;
++  b->aio_non_seq = 1;
++  b->aio_dev[1].pin = 26;
++  
++  b->pins[29].aio.pinmap = 3;
++  b->aio_non_seq = 1;
++  b->aio_dev[2].pin = 29;
++  
++  strncpy(b->pins[10].name, "ADC1_SE4", MRAA_PIN_NAME_SIZE); 
++  b->pins[10].capabilities = (mraa_pincapabilities_t){ 1, 0, 0, 0, 0, 0, 1, 1 }; // ADC and UART
++  b->pins[10].aio.pinmap = 4;
++  b->aio_non_seq = 1;
++  b->aio_dev[3].pin = 10;
++
++  b->pins[33].aio.pinmap = 3;
++  b->aio_non_seq = 1;
++  b->aio_dev[4].pin = 33;
++
++// PWM PINS
++
++  b->pins[7].pwm.pinmap = 7;
++  b->pins[7].pwm.parent_id = 8;
++
++
++  strncpy(b->pins[8].name, "FTM0_CH4", MRAA_PIN_NAME_SIZE);
++  b->pins[8].capabilities = (mraa_pincapabilities_t){ 1, 0, 1, 0, 0, 0, 0, 1 };
++  b->pins[8].pwm.pinmap = 4;
++  b->pins[8].pwm.parent_id = 0;
++
++  strncpy(b->pins[10].name, "FTM0_CH5", MRAA_PIN_NAME_SIZE);
++  b->pins[10].capabilities = (mraa_pincapabilities_t){ 1, 0, 1, 0, 0, 0, 0, 0 };
++  b->pins[10].pwm.pinmap = 5;
++  b->pins[10].pwm.parent_id = 0;
++
++  b->pins[11].pwm.pinmap = 6;
++  b->pins[11].pwm.parent_id = 8;
++
++  b->pins[12].pwm.pinmap = 5;
++  b->pins[12].pwm.parent_id = 8;
++
++  b->pins[13].pwm.pinmap = 4;
++  b->pins[13].pwm.parent_id = 8;
++
++  b->pins[15].pwm.pinmap = 3;
++  b->pins[15].pwm.parent_id = 8;
++
++  b->pins[16].pwm.pinmap = 2;
++  b->pins[16].pwm.parent_id = 8;
++
++  b->pins[18].pwm.pinmap = 1;
++  b->pins[18].pwm.parent_id = 8;
++
++  b->pins[22].pwm.pinmap = 0;
++  b->pins[22].pwm.parent_id = 8;
++
++  b->pins[29].pwm.pinmap = 1;
++  b->pins[29].pwm.parent_id = 0;
++
++  b->pins[32].pwm.pinmap = 0;
++  b->pins[32].pwm.parent_id = 0;
++
++  b->pins[33].pwm.pinmap = 3;
++  b->pins[33].pwm.parent_id = 0;
++
++  
++  strncpy(b->pins[19].name,"SPI_MOSI", MRAA_PIN_NAME_SIZE);
++  b->pins[19].capabilities = (mraa_pincapabilities_t){1, 0, 0, 0, 0, 1, 0, 0 };
++  strncpy(b->pins[21].name,"SPI_MISO", MRAA_PIN_NAME_SIZE);
++  b->pins[21].capabilities = (mraa_pincapabilities_t){1, 0, 0, 0, 0, 1, 0, 0 };
++  strncpy(b->pins[23].name,"SPI_CLK", MRAA_PIN_NAME_SIZE);
++  b->pins[23].capabilities = (mraa_pincapabilities_t){1, 0, 0, 0, 0, 1, 0, 0 };
++  strncpy(b->pins[24].name,"SCL1", MRAA_PIN_NAME_SIZE);
++  b->pins[24].capabilities = (mraa_pincapabilities_t){1, 0, 0, 0, 0, 1, 0, 0 };
++
++
++  b->spi_bus_count = MRAA_ZKIT_ARM_VF51_SPI_COUNT;
++  b->def_spi_bus = 0;
++  b->spi_bus[0].bus_id = 1;
++  b->spi_bus[0].slave_s = 0;
++  b->spi_bus[0].cs = 24;
++  b->spi_bus[0].mosi = 19;
++  b->spi_bus[0].miso = 21;
++  b->spi_bus[0].sclk = 23;
++
++
++  return b;
++}

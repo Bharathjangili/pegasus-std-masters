@@ -1,0 +1,37 @@
+---
+- name: Debian Jessie Rootfs with drivers ,library, and packages.
+  hosts: localhost
+  tasks:
+
+  # copy 80proxy
+  - copy: >
+      src=/mnt/files/etc/apt/apt.conf.d/80proxy
+      dest=/etc/apt/apt.conf.d/80proxy
+      owner=root group=root mode=644
+
+  # Run apt-get update before installing anything.
+  - apt:
+      update_cache: yes
+
+  # Required to update date & time to avoid unforeseen problems related to system time
+
+
+  # add the apt_repository
+  - name: Create Local Repository
+    apt_repository:
+      repo: deb file:///tmp ./
+      state: present
+      update_cache: yes
+
+  - name: jessie backport repository create for tenda firmware
+    apt_repository:
+      repo: deb http://ftp.de.debian.org/debian jessie-backports main non-free
+      state: present
+      update_cache: yes
+
+  - include: playbook-connectivity.yml
+
+  - include: playbook-core.yml
+
+  - include: playbook-testtool.yml  
+...

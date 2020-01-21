@@ -1,0 +1,93 @@
+Pegasus Standard is the BSP development kit which helps to build the
+Linux kernel, bootloader and root file system for Zilogic's mother
+boards from the standard distributions.
+
+== Advantages
+
+The standard distributions like debian, fedora, ubuntu etc., has a lot
+of advantages over custom distributions made out of yocto, openwrt,
+buildroot etc.,
+
+* Well proven and tested.
+
+* Follows common practices.
+
+* Maintained by dedicated team.
+ 
+* Supports constant upgradation and improvements
+
+* Supports security enhancements and fixes for vulnerabilites
+
+* Less maintenance overhead
+
+* Easier package management
+
+* Easily managed by anyone.
+
+== Pegasus Components
+
+* Make - for build
+
+* Ansible - for package management
+
+== Features
+
+* Builds u-boot, kernel, drivers & managed rootfs
+
+* Designed for multi distro , supports only Debian as of now.
+
+* Designed to support multiple boards, currently supports only
+  ZKit-ARM-VF51.
+
+* Can add support for custom code builds.
+
+* Designed support various file system images, currently supports only
+  ext4 and tar.
+
+* Planned to support testing in QEMU for sanity.
+
+* Planned to support build statistics for analysis.
+
+== ToDos and Improvements
+ 
+Current design of Pegasus follows heirarchical builds using recursive
+makes. Need to improve based on link
+http://miller.emu.id.au/pmiller/books/rmch/
+
+== User Instruction
+
+* run below commands to build the BSP. 
+
+----
+$make <board>_defconfig
+$make
+----
+
+== Build Procedure
+
+The Pegasus standard build system, 
+
+* downloads the sources into download folder
+
+* unpacks ans builds the sources into `output/build/package_name`
+  folder
+
+* the build outputs required for further builds are placed on
+  `staging` folder.
+
+* installs the packages in `output\target` folder which has rootfs
+  structure
+
+* the final binary images are places into `output\images` folder
+
+TOP_FOLDER
+  |
+  |_ downloads
+  |_ output
+          |_ build/package_name
+          |_ staging
+          |_ target
+          \_ images
+
+
+
